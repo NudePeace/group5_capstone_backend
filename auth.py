@@ -4,7 +4,7 @@ from pydantic import BaseModel, EmailStr
 from database import get_db
 from models import User, PasswordResetCode
 from smtp_utils import send_email_sync
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import bcrypt
 import random
 
@@ -18,6 +18,10 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -27,15 +31,17 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordConfirm(BaseModel):
     email: EmailStr
-    code: str
     new_password: str
 
+class ResetPasswordVerify(BaseModel):
+    email: EmailStr
+    code: str
 
 # ----------------------------------------------------
 # 이메일 중복 확인
 # ----------------------------------------------------
 @router.get("/check-email")
-def check_email(email: EmailStr, db: Session = Depends(get_db)):
+async def check_email(email: EmailStr, db: Session = Depends(get_db)):
     exists = db.query(User).filter(User.email == email).first()
     return {
         "available": exists is None,
@@ -73,7 +79,9 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 # 로그인
 # ----------------------------------------------------
 @router.post("/login")
-def login(request: Request, email: EmailStr, password: str, db: Session = Depends(get_db)):
+def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    email = data.email
+    password = data.password
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
@@ -81,7 +89,7 @@ def login(request: Request, email: EmailStr, password: str, db: Session = Depend
     if not bcrypt.checkpw(password.encode("utf-8"), user.password.encode("utf-8")):
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    request.session["user_id"] = user.user_id
+    request.session["user_id"] = str(user.user_id)
     request.session["email"] = user.email
 
     user.last_login = datetime.utcnow()
@@ -175,11 +183,8 @@ def password_reset_request(data: ResetPasswordRequest, background_tasks: Backgro
     return {"success": True, "message": "인증코드가 이메일로 발송되었습니다."}
 
 
-# ----------------------------------------------------
-# 비밀번호 찾기 - 인증코드 확인 + 비밀번호 재설정
-# ----------------------------------------------------
-@router.post("/password-reset/confirm")
-def password_reset_confirm(data: ResetPasswordConfirm, db: Session = Depends(get_db)):
+@router.post("/password-reset/verify-code")
+def password_reset_verify_code(data: ResetPasswordVerify, db: Session = Depends(get_db)):
     record = (
         db.query(PasswordResetCode)
         .filter(PasswordResetCode.email == data.email, PasswordResetCode.code == data.code)
@@ -190,8 +195,22 @@ def password_reset_confirm(data: ResetPasswordConfirm, db: Session = Depends(get
     if not record:
         raise HTTPException(status_code=400, detail="잘못된 인증코드입니다.")
 
-    if record.expires_at < datetime.utcnow():
+    if record.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="인증코드가 만료되었습니다.")
+
+    return {"success": True, "message": "인증코드가 확인되었습니다."}
+
+# ----------------------------------------------------
+# 비밀번호 찾기 - 인증코드 확인 + 비밀번호 재설정
+# ----------------------------------------------------
+@router.post("/password-reset/confirm")
+def password_reset_confirm(data: ResetPasswordConfirm, db: Session = Depends(get_db)):
+    record = (
+        db.query(PasswordResetCode)
+        .filter(PasswordResetCode.email == data.email)
+        .order_by(PasswordResetCode.created_at.desc())
+        .first()
+    )
 
     user = db.query(User).filter(User.email == data.email).first()
     if not user:

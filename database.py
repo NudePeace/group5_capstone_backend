@@ -16,7 +16,7 @@ if not DATABASE_URL:
 # create_engine: sync 사용 (psycopg2-binary 필요)
 engine = create_engine(
     DATABASE_URL,
-    echo=False,
+    echo=True,
     future=True
 )
 

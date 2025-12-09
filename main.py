@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+import chatbot_api_code
+
 # 로컬 .env 파일 로드
 load_dotenv()
 
@@ -46,6 +48,7 @@ app.add_middleware(
 
 # 인증 라우터 등록
 app.include_router(auth.router)
+app.include_router(chatbot_api_code.router)
 
 # uvicorn으로 실행:
 # uvicorn main:app --reload

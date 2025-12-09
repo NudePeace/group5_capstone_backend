@@ -4,8 +4,8 @@ from email.mime.text import MIMEText
 def send_email_sync(to_email: str, subject: str, body: str):
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
-    sender_email = "example@gmail.com"
-    sender_password = "examplepassword1234!"  # 구글 앱 비밀번호
+    sender_email = "lastglint@gmail.com"
+    sender_password = "jmzn xcnu kumv bppx"  # 구글 앱 비밀번호
 
     msg = MIMEText(body)
     msg["Subject"] = subject
